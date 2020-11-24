@@ -1,0 +1,4 @@
+github.com/elgs/gosplitargs v0.0.0-20161028071935-a491c5eeb3c8 h1:bD2/rCXwgXJm2vgoSSSCM9IPjVFfEoQFFblzg7HHABI=
+github.com/elgs/gosplitargs v0.0.0-20161028071935-a491c5eeb3c8/go.mod h1:o4DgpccPNAQAlPSxo7I4L/LWNh2oyr/BBGSynrLTmZM=
+github.com/jwilder/gojq v0.0.0-20161018055142-c550732d4a52 h1:ZSTiJFRPQr2XRqfgvm2xpEsrsudezdk8ykBXXiJDfiQ=
+github.com/jwilder/gojq v0.0.0-20161018055142-c550732d4a52/go.mod h1:pD7F1lLmlib/2Vy3xild2aXjNnnSudq54IJGftfO4O0=

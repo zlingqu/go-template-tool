@@ -1,0 +1,68 @@
+## start domain
+---
+{{- if .Env.BUILD_ENV_domain }}
+{{- if isTrue .Env.BUILD_ENV_https }}
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: http-to-https
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  redirectScheme:
+    scheme: https
+{{- end }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  entryPoints:
+  - web
+  routes:
+  - match: Host(`{{ .Env.BUILD_ENV_domain }}`)
+    kind: Rule
+    services:
+    - name: {{- if isTrue .Env.BUILD_ENV_ifUseGbs }} gbs-nginx{{- else }} {{ .Env.BUILD_ENV_jobName }}{{- end }}
+      port: 80
+{{- if isTrue .Env.BUILD_ENV_useSticky }}
+      sticky:
+        cookie:
+          name: sticky
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_useGrpc }}
+      scheme: h2c
+{{- end }}
+{{- if and (isTrue .Env.BUILD_ENV_https) (not (isTrue .Env.BUILD_ENV_http)) }}
+    middlewares:
+    - name: http-to-https
+      namespace: {{ .Env.BUILD_ENV_namespace }}
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_https }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}-https
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - match: Host(`{{ .Env.BUILD_ENV_domain }}`)
+    kind: Rule
+    services:
+    - name: {{- if isTrue .Env.BUILD_ENV_ifUseGbs }} gbs-nginx{{- else }} {{ .Env.BUILD_ENV_jobName }}{{- end }}
+      namespace: {{ .Env.BUILD_ENV_namespace }}
+      port: 80
+{{- if isTrue .Env.BUILD_ENV_useSticky }}
+      sticky:
+        cookie:
+          name: sticky
+{{- end }}
+  tls:
+    secretName: https-key-secret{{- if eq .Env.BUILD_ENV_deployEnv "dev"}}-dev{{- end}}{{- if eq .Env.BUILD_ENV_deployEnv "test"}}-test{{- end}}{{- if eq .Env.BUILD_ENV_deployEnv "stage"}}-stage{{- end}}
+{{- end }}
+{{- end }}
+## end domain

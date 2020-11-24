@@ -1,0 +1,138 @@
+{{- $serviceListenPortList := (split .Env.BUILD_ENV_containerPort ",") }}
+{{- $serviceListenPortListLen := (len $serviceListenPortList) }}
+
+{{- if eq .Env.BUILD_ENV_replicationControllerType "StatefulSet" }}
+---
+apiVersion: apps/v1
+kind: {{ .Env.BUILD_ENV_replicationControllerType }}
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}
+  labels:
+    app: {{ .Env.BUILD_ENV_jobName }}
+    version: v1
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+{{- if eq .Env.BUILD_ENV_replicationControllerType "StatefulSet" }}
+  serviceName: {{ .Env.BUILD_ENV_jobName }}
+{{- end }}
+  replicas: {{ default .Env.BUILD_ENV_replicas 1 }}
+  selector:
+    matchLabels:
+        app: {{ .Env.BUILD_ENV_jobName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Env.BUILD_ENV_jobName }}
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: {{- if isTrue .Env.BUILD_ENV_ifUseIstio }} "true"{{- else }} "false"{{- end }}
+    spec:
+      imagePullSecrets:
+      - name: regsecret
+{{- if and (eq .Env.BUILD_ENV_envType "gpu") (eq .Env.BUILD_ENV_gpuControlMode "pod") }}
+      nodeSelector:
+        gpu: enable
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+{{- end }}
+{{- if and (eq .Env.BUILD_ENV_envType "gpu") (eq .Env.BUILD_ENV_gpuControlMode "mem") }}
+      nodeSelector:
+        gpushare: enable
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+{{- end }}
+      containers:
+      - name: {{ .Env.BUILD_ENV_jobName }}
+        image: {{ .Env.BUILD_ENV_buildImageAddress }}
+        imagePullPolicy: Always
+{{- if isTrue .Env.BUILD_ENV_useConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Env.BUILD_ENV_jobName }}
+{{- end }}
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        - name: APOLLO_ENV
+          value: {{ upper .Env.BUILD_ENV_apolloEnv }}
+        - name: APOLLO_CONFIG_ADDRESS
+          value: http://{{ .Env.BUILD_ENV_apolloEnv }}-conf.apollo.cc.dm-ai.cn
+        - name: APOLLO_CLUSTER_NAME
+          value: {{ .Env.BUILD_ENV_apolloClusterName }}
+        - name: APOLLO_NAMESPACE
+          value: {{ .Env.BUILD_ENV_apolloNamespace }}
+        - name: APP_NAME
+          value: {{ .Env.BUILD_ENV_jobName }}
+        - name: DEPLOY_ENV
+          value: {{ .Env.BUILD_ENV_deployEnv }}
+        - name: APP_NAMESPACE
+          value: {{ .Env.BUILD_ENV_namespace }}
+        - name: aliyun_logs_k8s-{{ .Env.BUILD_ENV_deployEnv }}-{{ .Env.BUILD_ENV_namespace }}
+          value: stdout
+{{- if isTrue .Env.BUILD_ENV_useStore }}
+{{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
+      {{- $val := split $value ":" }}
+      volumeMounts:
+      - name: volumName-{{$index}}
+        mountPath: {{ index $val 1 }}
+{{- end }}
+{{- end }}
+        ports:
+{{- if eq $serviceListenPortListLen 1 }}
+        - containerPort: {{ .Env.BUILD_ENV_containerPort }}
+{{- end }}
+{{- if gt $serviceListenPortListLen 1 }}
+{{- range $index, $value := $serviceListenPortList }}
+        - containerPort: {{ $value }}
+{{- end }}
+{{- end }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ index $serviceListenPortList 0}}
+          initialDelaySeconds: 5
+          periodSeconds: 40
+          failureThreshold: 40
+        livenessProbe:
+          tcpSocket:
+            port: {{ index $serviceListenPortList 0}}
+          initialDelaySeconds: 15
+          periodSeconds: 20
+{{- if or .Env.BUILD_ENV_cpuRequests .Env.BUILD_ENV_memoryRequests .Env.BUILD_ENV_cpuLimits .Env.BUILD_ENV_memoryLimits .Env.BUILD_ENV_gpuLimits }}
+        resources:
+{{- end }}
+{{- if or .Env.BUILD_ENV_cpuRequests .Env.BUILD_ENV_memoryRequests }}
+          requests:
+{{- end }}
+{{- if .Env.BUILD_ENV_cpuRequests }}
+            cpu: {{ .Env.BUILD_ENV_cpuRequests }}
+{{- end }}
+{{- if .Env.BUILD_ENV_memoryRequests }}
+            memory: {{ .Env.BUILD_ENV_memoryRequests }}
+{{- end }}
+{{- if or .Env.BUILD_ENV_cpuLimits .Env.BUILD_ENV_memoryLimits .Env.BUILD_ENV_gpuLimits }}
+          limits:
+{{- end }}
+{{- if .Env.BUILD_ENV_cpuLimits }}
+            cpu: {{ .Env.BUILD_ENV_cpuLimits }}
+{{- end }}
+{{- if .Env.BUILD_ENV_memoryLimits }}
+            memory: {{ .Env.BUILD_ENV_memoryLimits }}
+{{- end }}
+{{- if and (eq .Env.BUILD_ENV_envType "gpu") (eq .Env.BUILD_ENV_gpuControlMode "pod") }}
+            nvidia.com/gpu: {{ .Env.BUILD_ENV_gpuLimits }}
+{{- end }}
+{{- if and (eq .Env.BUILD_ENV_envType "gpu") (eq .Env.BUILD_ENV_gpuControlMode "mem") }}
+            aliyun.com/gpu-mem: {{ .Env.GPU_MEM_COUNT }}
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_useStore }}
+      volumes:
+{{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
+      {{- $val := split $value ":" }}
+      - name: volumName-{{$index}}
+        persistentVolumeClaim:
+          claimName:{{ index $val 0 }}
+{{- end }}
+{{- end }}
+{{- end }}
