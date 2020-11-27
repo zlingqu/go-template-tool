@@ -1,7 +1,8 @@
 {{- $serviceListenPortList := (split .Env.BUILD_ENV_containerPort ",") }}
 {{- $serviceListenPortListLen := (len $serviceListenPortList) }}
 
-{{- if eq .Env.BUILD_ENV_replicationControllerType "StatefulSet" }}
+
+{{- if eq .Env.BUILD_ENV_replicationControllerType "Deployment" }}
 ---
 apiVersion: apps/v1
 kind: {{ .Env.BUILD_ENV_replicationControllerType }}
@@ -72,16 +73,16 @@ spec:
         - name: aliyun_logs_k8s-{{ .Env.BUILD_ENV_deployEnv }}-{{ .Env.BUILD_ENV_namespace }}
           value: stdout
 {{- if isTrue .Env.BUILD_ENV_useStore }}
+        volumeMounts:
 {{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
-      {{- $val := split $value ":" }}
-      volumeMounts:
-      - name: volumName-{{$index}}
-        mountPath: {{ index $val 1 }}
+        {{- $val := split $value ":" }}
+        - name: volume-{{$index}}
+          mountPath: {{ index $val 1 }}
 {{- end }}
 {{- end }}
         ports:
 {{- if eq $serviceListenPortListLen 1 }}
-        - containerPort: {{ .Env.BUILD_ENV_containerPort }}
+        - containerPort: {{ (default .Env.BUILD_ENV_containerPort "80") }}
 {{- end }}
 {{- if gt $serviceListenPortListLen 1 }}
 {{- range $index, $value := $serviceListenPortList }}
@@ -130,7 +131,7 @@ spec:
       volumes:
 {{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
       {{- $val := split $value ":" }}
-      - name: volumName-{{$index}}
+      - name: volume-{{$index}}
         persistentVolumeClaim:
           claimName:{{ index $val 0 }}
 {{- end }}

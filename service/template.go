@@ -1,8 +1,7 @@
-package svc
+package service
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -10,19 +9,20 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-
-	"github.com/jwilder/gojq"
 )
 
+// Context 定义一个结构体
 type Context struct {
 }
 
+// Env 采集环境变量，并转换成map
 func (c *Context) Env() map[string]string {
 	env := make(map[string]string)
 	for _, i := range os.Environ() {
 		sep := strings.Index(i, "=")
 		env[i[0:sep]] = i[sep+1:]
 	}
+
 	return env
 }
 
@@ -46,7 +46,7 @@ func contains(item map[string]string, key string) bool {
 
 func defaultValue(args ...interface{}) (string, error) {
 	if len(args) == 0 {
-		return "", fmt.Errorf("default called with no values!")
+		return "", fmt.Errorf("default called with no values")
 	}
 
 	if len(args) > 0 {
@@ -57,11 +57,11 @@ func defaultValue(args ...interface{}) (string, error) {
 
 	if len(args) > 1 {
 		if args[1] == nil {
-			return "", fmt.Errorf("default called with nil default value!")
+			return "", fmt.Errorf("default called with nil default value")
 		}
 
 		if _, ok := args[1].(string); !ok {
-			return "", fmt.Errorf("default is not a string value. hint: surround it w/ double quotes.")
+			return "", fmt.Errorf("default is not a string value. hint: surround it w/ double quotes")
 		}
 
 		return args[1].(string), nil
@@ -70,7 +70,7 @@ func defaultValue(args ...interface{}) (string, error) {
 	return "", fmt.Errorf("default called with no default value")
 }
 
-func parseUrl(rawurl string) *url.URL {
+func parseURL(rawurl string) *url.URL {
 	u, err := url.Parse(rawurl)
 	if err != nil {
 		log.Fatalf("unable to parse url %s: %s", rawurl, err)
@@ -88,18 +88,6 @@ func isTrue(s string) bool {
 		return b
 	}
 	return false
-}
-
-func jsonQuery(jsonObj string, query string) (interface{}, error) {
-	parser, err := gojq.NewStringQuery(jsonObj)
-	if err != nil {
-		return "", err
-	}
-	res, err := parser.Query(query)
-	if err != nil {
-		return "", err
-	}
-	return res, nil
 }
 
 func loop(args ...int) (<-chan int, error) {
@@ -126,26 +114,25 @@ func loop(args ...int) (<-chan int, error) {
 	return c, nil
 }
 
-func GenerateFile(templatePath, destPath string) bool {
+func generateFile(templatePath, destPath string) bool {
 	tmpl := template.New(filepath.Base(templatePath)).Funcs(template.FuncMap{ //自定义了很多方法，可以在模板中直接使用
-		"contains":  contains,
-		"exists":    exists,
-		"split":     strings.Split,
-		"replace":   strings.Replace,
-		"default":   defaultValue,
-		"parseUrl":  parseUrl,
-		"atoi":      strconv.Atoi,
-		"add":       add,
-		"isTrue":    isTrue,
-		"lower":     strings.ToLower,
-		"upper":     strings.ToUpper,
-		"jsonQuery": jsonQuery,
-		"loop":      loop,
+		"contains": contains,
+		"exists":   exists,
+		"split":    strings.Split,
+		"replace":  strings.Replace,
+		"default":  defaultValue,
+		"parseURL": parseURL,
+		"atoi":     strconv.Atoi,
+		"add":      add,
+		"isTrue":   isTrue,
+		"lower":    strings.ToLower,
+		"upper":    strings.ToUpper,
+		"loop":     loop,
 	})
 
 	tmpl, err := tmpl.ParseFiles(templatePath)
 	if err != nil {
-		log.Fatalf("unable to parse template: %s", err)
+		log.Fatalf("unable to parse template: %s", err) //无法解析，可能是格式错误
 	}
 
 	if _, err := os.Stat(destPath); err == nil {
@@ -166,35 +153,6 @@ func GenerateFile(templatePath, destPath string) bool {
 	err = tmpl.ExecuteTemplate(dest, filepath.Base(templatePath), &Context{})
 	if err != nil {
 		log.Fatalf("template error: %s\n", err)
-	}
-
-	return true
-}
-
-func GenerateDir(templateDir, destDir string) bool {
-	if destDir != "" {
-		fiDest, err := os.Stat(destDir)
-		if err != nil {
-			log.Fatalf("unable to stat %s, error: %s", destDir, err)
-		}
-		if !fiDest.IsDir() {
-			log.Fatalf("if template is a directory, dest must also be a directory (or stdout)")
-		}
-	}
-
-	files, err := ioutil.ReadDir(templateDir)
-	if err != nil {
-		log.Fatalf("bad directory: %s, error: %s", templateDir, err)
-	}
-
-	for _, file := range files {
-		fileName := strings.Split(file.Name(), ".")[0]
-		fileName = fileName + ".yml"
-		if destDir == "" {
-			GenerateFile(filepath.Join(templateDir, fileName), "")
-		} else {
-			GenerateFile(filepath.Join(templateDir, file.Name()), filepath.Join(destDir, fileName))
-		}
 	}
 
 	return true

@@ -46,12 +46,11 @@ spec:
           value: xmc-base
         - name: aliyun_logs_k8s-test-xmc-base
           value: stdout
-      volumeMounts:
-      - name: volumName-0
-        mountPath: /data1
-      volumeMounts:
-      - name: volumName-1
-        mountPath: data2
+        volumeMounts:
+        - name: volume-0
+          mountPath: /data1
+        - name: volume-1
+          mountPath: data2
         ports:
         - containerPort: 8081
         - containerPort: 8082
@@ -74,9 +73,9 @@ spec:
             cpu: 2000m
             memory: 8000Mi
       volumes:
-      - name: volumName-0
+      - name: volume-0
         persistentVolumeClaim:
           claimName:mypvc1
-      - name: volumName-1
+      - name: volume-1
         persistentVolumeClaim:
           claimName:mypvc2
