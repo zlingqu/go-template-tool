@@ -1,0 +1,328 @@
+{{- if and (isTrue .Env.BUILD_ENV_https) (ne .Env.BUILD_ENV_deployEnv "dev") (ne .Env.BUILD_ENV_deployEnv "test") (ne .Env.BUILD_ENV_deployEnv "stage")}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-key-secret
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUdKRENDQlF5Z***
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcEFJQ***
+{{- end }}
+{{- if and (isTrue .Env.BUILD_ENV_https) (eq .Env.BUILD_ENV_deployEnv "dev") }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-key-secret-dev
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUdJakNDQlFxZ0F***
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFcEFJQkF***
+{{- end }}
+{{- if and (isTrue .Env.BUILD_ENV_https) (eq .Env.BUILD_ENV_deployEnv "test") }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-key-secret-test
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUdKVENDQlEyZ0F3SUJ***
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0N***
+{{- end }}
+{{- if and (isTrue .Env.BUILD_ENV_https) (eq .Env.BUILD_ENV_deployEnv "stage") }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-key-secret-stage
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUZlVENDQkdHZ0F***
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkF***
+{{- end }}
+
+{{- $serviceListenPortList := (split .Env.BUILD_ENV_containerPort ",") }}
+{{- $serviceListenPortListLen := (len $serviceListenPortList) }}
+{{- $serviceDefaultListenPort := (index $serviceListenPortList 0)}}
+{{- if ne .Env.BUILD_ENV_svcType "None" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: {{ .Env.BUILD_ENV_jobName }}
+  name: {{ .Env.BUILD_ENV_jobName }}
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  ports:
+{{- if eq $serviceListenPortListLen 1 }}
+  - port: 80
+    name: http-80
+    targetPort: {{ $serviceDefaultListenPort }}
+{{- else}}
+{{- range $index, $value := $serviceListenPortList }}
+  - port: {{ $value }}
+    name: port-{{ $value }}
+    targetPort: {{ $value }}
+{{- end }}
+{{- end }}
+  selector:
+    app: {{ .Env.BUILD_ENV_jobName }}
+{{- if isTrue .Env.BUILD_ENV_useSticky }}
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 86000
+{{- end }}
+  type: {{ default .Env.BUILD_ENV_svcType "ClusterIP" }}
+## start domain
+---
+{{- if .Env.BUILD_ENV_domain }}
+{{- if isTrue .Env.BUILD_ENV_https }}
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: http-to-https
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  redirectScheme:
+    scheme: https
+{{- end }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  entryPoints:
+  - web
+  routes:
+  - match: Host(`{{ .Env.BUILD_ENV_domain }}`)
+    kind: Rule
+    services:
+{{- if isTrue .Env.BUILD_ENV_ifUseGbs }}
+    - name: gbs-nginx
+      port: 80
+{{- else}}
+    - name: {{ .Env.BUILD_ENV_jobName }}
+{{- if eq $serviceListenPortListLen 1 }}
+      port: 80
+{{- else }}
+      port: {{ $serviceDefaultListenPort }}
+{{- end }}
+{{- end}}
+{{- if isTrue .Env.BUILD_ENV_useSticky }}
+      sticky:
+        cookie:
+          name: sticky
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_useGrpc }}
+      scheme: h2c
+{{- end }}
+{{- if and (isTrue .Env.BUILD_ENV_https) (not (isTrue .Env.BUILD_ENV_http)) }}
+    middlewares:
+    - name: http-to-https
+      namespace: {{ .Env.BUILD_ENV_namespace }}
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_https }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}-https
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - match: Host(`{{ .Env.BUILD_ENV_domain }}`)
+    kind: Rule
+    services:
+{{- if isTrue .Env.BUILD_ENV_ifUseGbs }}
+    - name: gbs-nginx
+      port: 80
+{{- else}}
+    - name: {{ .Env.BUILD_ENV_jobName }}
+{{- if eq $serviceListenPortListLen 1 }}
+      port: 80
+{{- else }}
+      port: {{ $serviceDefaultListenPort }}
+{{- end }}
+{{- end}}
+{{- if isTrue .Env.BUILD_ENV_useSticky }}
+      sticky:
+        cookie:
+          name: sticky
+{{- end }}
+  tls:
+    secretName: https-key-secret{{- if eq .Env.BUILD_ENV_deployEnv "dev"}}-dev{{- end}}{{- if eq .Env.BUILD_ENV_deployEnv "test"}}-test{{- end}}{{- if eq .Env.BUILD_ENV_deployEnv "stage"}}-stage{{- end}}
+{{- end }}
+{{- end }}
+## end domain
+{{- end }}
+## end  .Env.BUILD_ENV_svcType
+---
+apiVersion: apps/v1
+kind: {{ .Env.BUILD_ENV_replicationControllerType }}
+metadata:
+  name: {{ .Env.BUILD_ENV_jobName }}
+  labels:
+    app: {{ .Env.BUILD_ENV_jobName }}
+    version: v1
+  namespace: {{ .Env.BUILD_ENV_namespace }}
+spec:
+{{- if eq .Env.BUILD_ENV_replicationControllerType "StatefulSet" }}
+  serviceName: {{ .Env.BUILD_ENV_jobName }}
+{{- end }}
+  replicas: {{ default .Env.BUILD_ENV_replicas 1 }}
+  selector:
+    matchLabels:
+        app: {{ .Env.BUILD_ENV_jobName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Env.BUILD_ENV_jobName }}
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: {{- if isTrue .Env.BUILD_ENV_ifUseIstio }} "true"{{- else }} "false"{{- end }}
+    spec:
+      imagePullSecrets:
+      - name: regsecret
+{{- if  eq .Env.BUILD_ENV_envType "gpu" }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+{{- if eq .Env.BUILD_ENV_gpuControlMode "pod" }}
+              - key: gpu.card.type
+{{- end }}
+{{- if eq .Env.BUILD_ENV_gpuControlMode "mem" }}
+              - key: gpu.mem.type
+{{- end }}
+{{- if eq .Env.GPU_TYPE "all"}}
+                operator: Exists
+{{- else }}
+                operator: In
+                values:
+{{- range $value := split .Env.BUILD_ENV_gpuType "," }}
+                - {{ $value }}
+{{- end }}
+{{- end }}
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+{{- else }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpu.card.type
+                operator: DoesNotExist
+              - key: gpu.mem.type
+                operator: DoesNotExist
+{{- end }}
+      containers:
+      - name: {{ .Env.BUILD_ENV_jobName }}
+        image: {{ .Env.BUILD_ENV_buildImageAddress }}
+        imagePullPolicy: Always
+{{- if isTrue .Env.BUILD_ENV_useConfigMap }}
+        envFrom:
+        - configMapRef:
+            name: {{ .Env.BUILD_ENV_jobName }}
+{{- end }}
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        - name: APP_NAME
+          value: {{ .Env.BUILD_ENV_jobName }}
+        - name: DEPLOY_ENV
+          value: {{ .Env.BUILD_ENV_deployEnv }}
+        - name: APP_NAMESPACE
+          value: {{ .Env.BUILD_ENV_namespace }}
+        - name: aliyun_logs_k8s-{{ .Env.BUILD_ENV_deployEnv }}-{{ .Env.BUILD_ENV_namespace }}
+          value: stdout
+{{- if ne .Env.BUILD_ENV_yamlEnv "None"}}
+{{- range $index,$value := split .Env.BUILD_ENV_yamlEnv "," }}
+        - name: {{ index (split $value "=") 0 }}
+          {{- $val := index (split $value "=") 1 }}
+          {{- if or (eq $val "true") (eq $val "false") }}
+          value: "{{ $val }}"
+          {{- else }}
+          value: {{ $val }}
+          {{- end}}
+{{- end }}
+{{- end }}
+{{- if eq .Env.BUILD_ENV_deployEnvStatus "start" }}          
+        - name: APOLLO_ENV
+          value: {{ upper .Env.BUILD_ENV_apolloEnv }}
+        - name: APOLLO_CONFIG_ADDRESS
+          value: http://{{ .Env.BUILD_ENV_apolloEnv }}-conf.apollo.cc.dm-ai.cn
+        - name: APOLLO_CLUSTER_NAME
+          value: {{ .Env.BUILD_ENV_apolloClusterName }}
+        - name: APOLLO_NAMESPACE
+          value: {{ .Env.BUILD_ENV_apolloNamespace }}
+{{- end}}
+{{- if isTrue .Env.BUILD_ENV_useStore }}
+        volumeMounts:
+{{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
+        - name: volume-{{$index}}
+          mountPath: {{ index (split $value ":") 1 }}
+{{- end }}
+{{- end }}
+{{- if ne .Env.BUILD_ENV_svcType "None" }}
+        ports:
+{{- range $index, $value := $serviceListenPortList }}
+        - containerPort: {{ $value }}
+{{- end }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ $serviceDefaultListenPort }}
+          initialDelaySeconds: 5
+          periodSeconds: 40
+          failureThreshold: 40
+        livenessProbe:
+          tcpSocket:
+            port: {{ $serviceDefaultListenPort }}
+          initialDelaySeconds: 15
+          periodSeconds: 20
+{{- end }}
+        resources:
+          requests:
+{{- if .Env.BUILD_ENV_cpuRequests }}
+            cpu: {{ .Env.BUILD_ENV_cpuRequests }}
+{{- end }}
+{{- if .Env.BUILD_ENV_memoryRequests }}
+            memory: {{ .Env.BUILD_ENV_memoryRequests }}
+{{- end }}
+          limits:
+{{- if .Env.BUILD_ENV_cpuLimits }}
+            cpu: {{ .Env.BUILD_ENV_cpuLimits }}
+{{- end }}
+{{- if .Env.BUILD_ENV_memoryLimits }}
+            memory: {{ .Env.BUILD_ENV_memoryLimits }}
+{{- end }}
+{{- if  eq .Env.BUILD_ENV_envType "gpu" }}
+{{- if eq .Env.BUILD_ENV_gpuControlMode "pod" }}
+            nvidia.com/gpu: {{ .Env.BUILD_ENV_gpuLimits }}
+{{- end }}
+{{- if eq .Env.BUILD_ENV_gpuControlMode "mem" }}
+            aliyun.com/gpu-mem: {{ .Env.GPU_MEM_COUNT }}
+{{- end }}
+{{- end }}
+{{- if isTrue .Env.BUILD_ENV_useStore }}
+      volumes:
+{{- range $index,$value := split .Env.BUILD_ENV_storePath "," }}
+      - name: volume-{{$index}}
+        persistentVolumeClaim:
+          claimName: {{ index (split $value ":") 0 }}
+{{- end }}
+{{- end }}

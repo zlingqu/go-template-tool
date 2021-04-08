@@ -1,14 +1,16 @@
 # 使用go 模板生成yaml文件
 ## 使用方法
-配置文件：config/k8s.config, 支持多端口，支持多路径挂载
+配置文件示例：k8s.config
 
 
-模板文件：src_dest/*
+模板文件示例：src_dest/*，k8s.tmpl
 
-查看main.go文件，修改相关内容后执行以下操作
-
+查看帮助
+```bash
+go run main.go --help
 ```
-go run main.go
-```
-进入dest_dir目录即可查看生成的yaml文件
 
+例如：
+```bash
+go run main.go --config k8s.config --src k8s.tmpl --dest k8s.yml
+```
