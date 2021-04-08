@@ -1,0 +1,167 @@
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: https-key-secret-test
+  namespace: xmc-base
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUdKVENDQlEyZ0F3SUJ***
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0N***
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: base-storage-server
+  name: base-storage-server
+  namespace: xmc-base
+spec:
+  ports:
+  - port: 80
+    name: http-80
+    targetPort: 8081
+  selector:
+    app: base-storage-server
+  type: NodePort
+## start domain
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: http-to-https
+  namespace: xmc-base
+spec:
+  redirectScheme:
+    scheme: https
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: base-storage-server
+  namespace: xmc-base
+spec:
+  entryPoints:
+  - web
+  routes:
+  - match: Host(`base-storage-server.xmc-base.test.dm-ai.cn`)
+    kind: Rule
+    services:
+    - name: base-storage-server
+      port: 80
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: base-storage-server-https
+  namespace: xmc-base
+spec:
+  entryPoints:
+  - websecure
+  routes:
+  - match: Host(`base-storage-server.xmc-base.test.dm-ai.cn`)
+    kind: Rule
+    services:
+    - name: base-storage-server
+      port: 80
+  tls:
+    secretName: https-key-secret-test
+## end domain
+## end  .Env.BUILD_ENV_svcType
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: base-storage-server
+  labels:
+    app: base-storage-server
+    version: v1
+  namespace: xmc-base
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+        app: base-storage-server
+  template:
+    metadata:
+      labels:
+        app: base-storage-server
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      imagePullSecrets:
+      - name: regsecret
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: gpu.mem.type
+                operator: Exists
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: base-storage-server
+        image: docker.dm-ai.cn/xmc-base/base-storage-server:test-14-bcedf317dd161d64c2ca35c9af793c59702abb60-test
+        imagePullPolicy: Always
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        - name: APP_NAME
+          value: base-storage-server
+        - name: DEPLOY_ENV
+          value: test
+        - name: APP_NAMESPACE
+          value: xmc-base
+        - name: aliyun_logs_k8s-test-xmc-base
+          value: stdout
+        - name: a
+          value: "true"
+        - name: c
+          value: d
+        - name: e
+          value: "false"          
+        - name: APOLLO_ENV
+          value: TEST
+        - name: APOLLO_CONFIG_ADDRESS
+          value: http://test-conf.apollo.cc.dm-ai.cn
+        - name: APOLLO_CLUSTER_NAME
+          value: default
+        - name: APOLLO_NAMESPACE
+          value: application
+        volumeMounts:
+        - name: volume-0
+          mountPath: /data
+        - name: volume-1
+          mountPath: /dadta2
+        ports:
+        - containerPort: 8081
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 40
+          failureThreshold: 40
+        livenessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        resources:
+          requests:
+            cpu: 2000m
+            memory: 6000Mi
+          limits:
+            cpu: 2000m
+            memory: 8000Mi
+            aliyun.com/gpu-mem: 3
+      volumes:
+      - name: volume-0
+        persistentVolumeClaim:
+          claimName: mypvc
+      - name: volume-1
+        persistentVolumeClaim:
+          claimName: mypvc2
