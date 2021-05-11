@@ -27,46 +27,6 @@ spec:
   type: NodePort
 ## start domain
 ---
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: http-to-https
-  namespace: xmc-base
-spec:
-  redirectScheme:
-    scheme: https
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: IngressRoute
-metadata:
-  name: base-storage-server
-  namespace: xmc-base
-spec:
-  entryPoints:
-  - web
-  routes:
-  - match: Host(`base-storage-server.xmc-base.test.dm-ai.cn`)
-    kind: Rule
-    services:
-    - name: base-storage-server
-      port: 80
----
-apiVersion: traefik.containo.us/v1alpha1
-kind: IngressRoute
-metadata:
-  name: base-storage-server-https
-  namespace: xmc-base
-spec:
-  entryPoints:
-  - websecure
-  routes:
-  - match: Host(`base-storage-server.xmc-base.test.dm-ai.cn`)
-    kind: Rule
-    services:
-    - name: base-storage-server
-      port: 80
-  tls:
-    secretName: https-key-secret-test
 ## end domain
 ## end  .Env.BUILD_ENV_svcType
 ---
@@ -94,15 +54,27 @@ spec:
       imagePullSecrets:
       - name: regsecret
       affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - base-storage-server
+            topologyKey: kubernetes.io/hostname
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
+              - key: node.special.for
+                operator: In
+                values:
+                - daipops
+              - key: gpu.card.type
+                operator: DoesNotExist
               - key: gpu.mem.type
-                operator: Exists
-      tolerations:
-      - operator: Exists
-        effect: NoSchedule
+                operator: DoesNotExist
       containers:
       - name: base-storage-server
         image: docker.dm-ai.cn/xmc-base/base-storage-server:test-14-bcedf317dd161d64c2ca35c9af793c59702abb60-test
@@ -119,11 +91,7 @@ spec:
         - name: aliyun_logs_k8s-test-xmc-base
           value: stdout
         - name: a
-          value: "true"
-        - name: c
-          value: d
-        - name: e
-          value: "false"          
+          value: "true,c"       
         - name: APOLLO_ENV
           value: TEST
         - name: APOLLO_CONFIG_ADDRESS
@@ -139,17 +107,6 @@ spec:
           mountPath: /dadta2
         ports:
         - containerPort: 8081
-        readinessProbe:
-          tcpSocket:
-            port: 8081
-          initialDelaySeconds: 5
-          periodSeconds: 40
-          failureThreshold: 40
-        livenessProbe:
-          tcpSocket:
-            port: 8081
-          initialDelaySeconds: 15
-          periodSeconds: 20
         resources:
           requests:
             cpu: 2000m
@@ -157,7 +114,6 @@ spec:
           limits:
             cpu: 2000m
             memory: 8000Mi
-            aliyun.com/gpu-mem: 3
       volumes:
       - name: volume-0
         persistentVolumeClaim:
