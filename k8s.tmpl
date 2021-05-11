@@ -195,19 +195,38 @@ spec:
     spec:
       imagePullSecrets:
       - name: regsecret
-{{- if  eq .Env.BUILD_ENV_envType "gpu" }}
       affinity:
+{{- if isTrue .Env.BUILD_ENV_ifUsePodAntiAffinity }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ .Env.BUILD_ENV_jobName }}
+            topologyKey: kubernetes.io/hostname
+{{- end }}
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
+              - key: node.special.for
+{{- if  ne .Env.BUILD_ENV_nodeSpecialFor "None" }}
+                operator: In
+                values:
+                - {{ .Env.BUILD_ENV_nodeSpecialFor }} 
+{{- else }}
+                operator: DoesNotExist
+{{-  end }}
+{{- if  eq .Env.BUILD_ENV_envType "gpu" }}
 {{- if eq .Env.BUILD_ENV_gpuControlMode "pod" }}
               - key: gpu.card.type
 {{- end }}
 {{- if eq .Env.BUILD_ENV_gpuControlMode "mem" }}
               - key: gpu.mem.type
 {{- end }}
-{{- if eq .Env.GPU_TYPE "all"}}
+{{- if eq .Env.BUILD_ENV_gpuType "all"}}
                 operator: Exists
 {{- else }}
                 operator: In
@@ -220,11 +239,6 @@ spec:
       - operator: Exists
         effect: NoSchedule
 {{- else }}
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
               - key: gpu.card.type
                 operator: DoesNotExist
               - key: gpu.mem.type
@@ -234,11 +248,6 @@ spec:
       - name: {{ .Env.BUILD_ENV_jobName }}
         image: {{ .Env.BUILD_ENV_buildImageAddress }}
         imagePullPolicy: Always
-{{- if isTrue .Env.BUILD_ENV_useConfigMap }}
-        envFrom:
-        - configMapRef:
-            name: {{ .Env.BUILD_ENV_jobName }}
-{{- end }}
         env:
         - name: TZ
           value: Asia/Shanghai
@@ -251,17 +260,13 @@ spec:
         - name: aliyun_logs_k8s-{{ .Env.BUILD_ENV_deployEnv }}-{{ .Env.BUILD_ENV_namespace }}
           value: stdout
 {{- if ne .Env.BUILD_ENV_yamlEnv "None"}}
-{{- range $index,$value := split .Env.BUILD_ENV_yamlEnv "," }}
+{{- range $index,$value := split .Env.BUILD_ENV_yamlEnv "|||" }}
         - name: {{ index (split $value "=") 0 }}
           {{- $val := index (split $value "=") 1 }}
-          {{- if or (eq $val "true") (eq $val "false") }}
           value: "{{ $val }}"
-          {{- else }}
-          value: {{ $val }}
-          {{- end}}
+          {{- end }}
 {{- end }}
-{{- end }}
-{{- if eq .Env.BUILD_ENV_deployEnvStatus "start" }}          
+{{- if isTrue .Env.BUILD_ENV_ifUseApollo }}       
         - name: APOLLO_ENV
           value: {{ upper .Env.BUILD_ENV_apolloEnv }}
         - name: APOLLO_CONFIG_ADDRESS
@@ -283,6 +288,7 @@ spec:
 {{- range $index, $value := $serviceListenPortList }}
         - containerPort: {{ $value }}
 {{- end }}
+{{- if isTrue .Env.BUILD_ENV_ifCheckPodsStatus }}
         readinessProbe:
           tcpSocket:
             port: {{ $serviceDefaultListenPort }}
@@ -294,6 +300,7 @@ spec:
             port: {{ $serviceDefaultListenPort }}
           initialDelaySeconds: 15
           periodSeconds: 20
+{{- end }}
 {{- end }}
         resources:
           requests:
